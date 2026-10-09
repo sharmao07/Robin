@@ -2,6 +2,11 @@ import sys
 
 from robin.brain.local_llm import load_brain, stream_reply
 from robin.tools.apps import open_app
+from robin.brain.memory import (
+    initialize_memory,
+    load_recent_messages,
+    save_turn,
+)
 
 
 RESET = "\033[0m"
@@ -52,7 +57,10 @@ def main():
     robin_says("I'm ready. How can I help?")
     print(f"{YELLOW}Type 'help' for commands or 'exit' to quit.{RESET}\n")
 
+    initialize_memory()
+
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.extend(load_recent_messages(limit=8))
 
     while True:
         try:
@@ -116,6 +124,7 @@ def main():
                 continue
 
             messages.append({"role": "assistant", "content": answer})
+            save_turn(command, answer)
 
         except Exception as error:
             messages.pop()
