@@ -1,118 +1,29 @@
-import re
+import ollama
 
-from mlx_lm import load, stream_generate
-from robin.brain.config import MAX_NEW_TOKENS, MODEL_DIR
 
+MODEL_NAME = "qwen3:4b"
+client = ollama.Client(host="http://127.0.0.1:11434")
 
 
 def load_brain():
-    """Load Robin's language model locally."""
+    """Verify that Robin's model is available locally."""
 
-    if not (MODEL_DIR / "config.json").is_file():
-        raise FileNotFoundError(
-            f"Model configuration not found: {MODEL_DIR}"
-        )
-
-    return load(str(MODEL_DIR))
+    client.show(MODEL_NAME)
+    return MODEL_NAME, client
 
 
-def clean_response(text: str) -> str:
-    """Remove visible thinking blocks."""
+def stream_reply(model, client, messages):
+    """Stream responses from Robin's local model."""
 
-    text = re.sub(
-        r"<think\b[^>]*>.*?</think\s*>",
-        "",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
+    response_stream = client.chat(
+        model=model,
+        messages=messages,
+        stream=True,
+        think=False,
     )
 
-    text = re.sub(
-        r"<think\b[^>]*>.*$",
-        "",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
+    for part in response_stream:
+        content = part.message.content or ""
 
-    return text.strip()
-
-
-def stream_reply(model, tokenizer, messages):
-    """Stream Robin's answer while suppressing thinking blocks."""
-
-    prompt = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-
-    pending = ""
-    inside_think = False
-
-    for response in stream_generate(
-        model,
-        tokenizer,
-        prompt,
-        max_tokens=MAX_NEW_TOKENS,
-    ):
-        pending += response.text
-
-        while pending:
-            if inside_think:
-                closing = re.search(
-                    r"</think\s*>",
-                    pending,
-                    flags=re.IGNORECASE,
-                )
-
-                if closing:
-                    pending = pending[closing.end():]
-                    inside_think = False
-                    continue
-
-                # Retain a suffix in case the closing tag
-                # is split between generated chunks.
-                pending = pending[-7:]
-                break
-
-            opening = re.search(
-                r"<think\b",
-                pending,
-                flags=re.IGNORECASE,
-            )
-
-            if opening:
-                tag_end = pending.find(">", opening.start())
-
-                if tag_end == -1:
-                    if opening.start() > 0:
-                        yield pending[:opening.start()]
-
-                    pending = pending[opening.start():]
-                    break
-
-                if opening.start() > 0:
-                    yield pending[:opening.start()]
-
-                pending = pending[tag_end + 1:]
-                inside_think = True
-                continue
-
-            # Keep a short suffix to detect a tag that may
-            # begin in the next generated chunk.
-            safe_length = len(pending) - 5
-
-            if safe_length > 0:
-                yield pending[:safe_length]
-                pending = pending[safe_length:]
-
-            break
-
-    if not inside_think and pending:
-        lower = pending.lower()
-        tag_start = lower.rfind("<")
-
-        if tag_start >= 0 and "<think".startswith(lower[tag_start:]):
-            pending = pending[:tag_start]
-
-        if pending:
-            yield pending
+        if content:
+            yield content
