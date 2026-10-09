@@ -2,6 +2,7 @@ import sys
 
 from robin.brain.local_llm import load_brain, stream_reply
 from robin.tools.apps import open_app
+from robin.brain.audit import record_event
 from robin.tools.router import parse_app_request
 from robin.tools.permissions import authorize
 from robin.brain.memory import (
@@ -102,8 +103,10 @@ def main():
         if app_name is not None:
             if authorize("open_app", app_name):
                 result = open_app(app_name)
+                record_event("open_app", app_name, result)
                 robin_says(result)
             else:
+                record_event("open_app", app_name, "blocked")
                 robin_says("This action is not permitted.")
             continue
 
