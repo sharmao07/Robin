@@ -10,10 +10,10 @@ APP_ALIASES = {
 
 
 def parse_app_request(text: str):
-    """Recognize explicit requests to open an application."""
+    """Recognize explicit requests to launch approved applications."""
 
     pattern = (
-        r"^\s*(?:hey robin[, ]+)?"
+        r"^\s*(?:(?:hey\s+)?robin[, ]+)?"
         r"(?:please\s+)?"
         r"(?:can you\s+|could you\s+)?"
         r"(?:open|launch|start)\s+"
