@@ -1,15 +1,16 @@
 import sys
+import time
 
 from robin.brain.local_llm import load_brain, stream_reply
-from robin.tools.apps import open_app
-from robin.brain.audit import record_event
-from robin.tools.router import parse_app_request
-from robin.tools.permissions import authorize
 from robin.brain.memory import (
     initialize_memory,
     load_recent_messages,
     save_turn,
 )
+from robin.brain.audit import record_event
+from robin.tools.apps import open_app
+from robin.tools.permissions import authorize
+from robin.tools.router import parse_app_request
 
 
 RESET = "\033[0m"
@@ -17,24 +18,28 @@ CYAN = "\033[96m"
 GREEN = "\033[92m"
 MAGENTA = "\033[95m"
 YELLOW = "\033[93m"
+GRAY = "\033[90m"
 
 if not sys.stdout.isatty():
-    RESET = CYAN = GREEN = MAGENTA = YELLOW = ""
+    RESET = CYAN = GREEN = MAGENTA = YELLOW = GRAY = ""
 
 
 SYSTEM_PROMPT = """
 You are Robin, a personal AI assistant running locally on a Mac.
 
-Speak naturally, intelligently, and confidently.
-Help with coding, writing, planning, and research.
-Explain technical subjects clearly.
-Be honest about uncertainty and limitations.
-Never pretend to have performed an action.
-Never claim to know information you have not accessed.
+Personality:
+- Be helpful, natural, intelligent, and concise.
+- Help with coding, planning, writing, and research.
+- Answer the user's question directly.
+- Usually answer in 2-5 sentences and aim for under 80 words.
+- Give detailed explanations when the user asks.
+- Be honest about uncertainty.
 
-Your available computer tool is restricted to opening
-applications explicitly requested by the user.
-You cannot execute arbitrary commands or delete files.
+Safety:
+- Only use explicitly registered tools.
+- Never claim to have performed an action unless it succeeded.
+- Do not claim to know information you have not accessed.
+- Never delete files or perform destructive actions automatically.
 """
 
 
@@ -45,25 +50,30 @@ def robin_says(message):
 def main():
     print(f"{MAGENTA}")
     print("==========================================")
-    print("          ROBIN | LOCAL AI")
+    print("             ROBIN | LOCAL AI")
     print("==========================================")
-    print(f"{RESET}")
+    print(RESET)
 
-    print(f"{YELLOW}Loading Robin's local brain...{RESET}")
+    print(f"{YELLOW}Connecting to Robin's local AI...{RESET}")
 
     try:
-        model, tokenizer = load_brain()
+        model, client = load_brain()
     except Exception as error:
-        print(f"{YELLOW}Could not load Robin's brain: {error}{RESET}")
+        print(f"{YELLOW}Could not load Robin's AI: {error}{RESET}")
+        return
+
+    try:
+        initialize_memory()
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT}
+        ]
+        messages.extend(load_recent_messages(limit=8))
+    except Exception as error:
+        print(f"{YELLOW}Could not initialize memory: {error}{RESET}")
         return
 
     robin_says("I'm ready. How can I help?")
     print(f"{YELLOW}Type 'help' for commands or 'exit' to quit.{RESET}\n")
-
-    initialize_memory()
-
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.extend(load_recent_messages(limit=8))
 
     while True:
         try:
@@ -86,55 +96,134 @@ def main():
 
         if lowered == "help":
             robin_says(
-                "Commands:\n"
-                "  open safari\n"
-                "  open vscode\n"
-                "  open notes\n"
-                "  open finder\n"
-                "  open calculator\n"
-                "  open blender\n"
-                "  help\n"
-                "  exit"
+                "You can chat with me or ask me to open an approved app.\n"
+                "Examples: open safari, launch vscode, start notes.\n"
+                "Type exit to quit."
             )
             continue
 
+        # Only explicit app-launch requests reach this tool.
         app_name = parse_app_request(command)
 
         if app_name is not None:
-            if authorize("open_app", app_name):
-                result = open_app(app_name)
-                record_event("open_app", app_name, result)
-                robin_says(result)
-            else:
-                record_event("open_app", app_name, "blocked")
-                robin_says("This action is not permitted.")
+            try:
+                if authorize("open_app", app_name):
+                    result = open_app(app_name)
+                    record_event("open_app", app_name, result)
+                    robin_says(result)
+                else:
+                    record_event("open_app", app_name, "blocked")
+                    robin_says("This action is not permitted.")
+            except Exception as error:
+                robin_says(f"The app action failed: {error}")
+
             continue
 
-        messages.append({"role": "user", "content": command})
+        messages.append({
+            "role": "user",
+            "content": command,
+        })
 
+        # Keep recent conversation context manageable.
         if len(messages) > 13:
             messages = [messages[0]] + messages[-12:]
 
         answer_parts = []
+        generation_started = time.perf_counter()
+        first_output_at = None
+
+        thinking_displayed = 0
+        thinking_limit = 300
+        thinking_label_printed = False
+        thinking_notice_shown = False
+        answer_label_printed = False
 
         try:
-            print(f"{GREEN}Robin > ", end="", flush=True)
+            for kind, chunk in stream_reply(
+                model,
+                client,
+                messages,
+            ):
+                if not chunk:
+                    continue
 
-            for chunk in stream_reply(model, tokenizer, messages):
+                if kind == "thinking":
+                    if not thinking_label_printed:
+                        print(
+                            f"{GRAY}Thinking > ",
+                            end="",
+                            flush=True,
+                        )
+                        thinking_label_printed = True
+
+                    remaining = max(
+                        0,
+                        thinking_limit - thinking_displayed,
+                    )
+                    visible = chunk[:remaining]
+
+                    if visible:
+                        sys.stdout.write(f"{GRAY}{visible}")
+                        sys.stdout.flush()
+                        thinking_displayed += len(visible)
+
+                    if (
+                        len(visible) < len(chunk)
+                        and not thinking_notice_shown
+                    ):
+                        sys.stdout.write(
+                            f"{GRAY} ... [thinking display shortened]"
+                        )
+                        sys.stdout.flush()
+                        thinking_notice_shown = True
+
+                    continue
+
+                # Start the final answer in green.
+                if not answer_label_printed:
+                    if thinking_label_printed:
+                        print(RESET)
+
+                    print(
+                        f"{GREEN}Robin > ",
+                        end="",
+                        flush=True,
+                    )
+                    answer_label_printed = True
+
+                if first_output_at is None:
+                    first_output_at = time.perf_counter()
+
                 answer_parts.append(chunk)
-                sys.stdout.write(chunk)
+                sys.stdout.write(f"{GREEN}{chunk}")
                 sys.stdout.flush()
 
-            answer = "".join(answer_parts).strip()
             print(f"{RESET}\n")
+
+            answer = "".join(answer_parts).strip()
+            elapsed = time.perf_counter() - generation_started
+
+            if first_output_at is not None:
+                first_delay = first_output_at - generation_started
+                print(
+                    f"{YELLOW}[First answer text: {first_delay:.2f}s"
+                    f" | Total: {elapsed:.2f}s]{RESET}\n"
+                )
 
             if not answer:
                 messages.pop()
-                robin_says("I couldn't produce a response. Please try again.")
+                robin_says("I couldn't produce a final answer. Please try again.")
                 continue
 
-            messages.append({"role": "assistant", "content": answer})
-            save_turn(command, answer)
+            messages.append({
+                "role": "assistant",
+                "content": answer,
+            })
+
+            try:
+                save_turn(command, answer)
+            except Exception as error:
+                robin_says(f"Warning: I couldn't save conversation memory: {error}")
 
         except Exception as error:
             messages.pop()
