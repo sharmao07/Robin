@@ -2,6 +2,7 @@ import sys
 
 from robin.brain.local_llm import load_brain, stream_reply
 from robin.tools.apps import open_app
+from robin.tools.router import parse_app_request
 from robin.brain.memory import (
     initialize_memory,
     load_recent_messages,
@@ -95,8 +96,10 @@ def main():
             )
             continue
 
-        if lowered.startswith("open "):
-            result = open_app(command[5:].strip())
+        app_name = parse_app_request(command)
+
+        if app_name is not None:
+            result = open_app(app_name)
             robin_says(result)
             continue
 
