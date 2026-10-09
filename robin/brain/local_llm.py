@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from mlx_lm import generate, load
@@ -14,7 +15,7 @@ MODEL_DIR = (
 
 
 def load_brain():
-    """Load Robin's model from a local directory."""
+    """Load Robin's model from local storage."""
 
     if not (MODEL_DIR / "config.json").is_file():
         raise FileNotFoundError(
@@ -26,8 +27,38 @@ def load_brain():
     return model, tokenizer
 
 
+def clean_response(text: str) -> str:
+    """Remove visible thinking blocks from the model's response."""
+
+    # Remove complete <think>...</think> blocks.
+    text = re.sub(
+        r"<think\b[^>]*>.*?</think\s*>",
+        "",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # Remove an unfinished thinking block at the end.
+    text = re.sub(
+        r"<think\b[^>]*>.*$",
+        "",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # Remove any leftover thinking tags.
+    text = re.sub(
+        r"</?think\s*>",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    return text.strip()
+
+
 def generate_reply(model, tokenizer, messages):
-    """Generate a response using Robin's local model."""
+    """Generate a cleaned response using Robin's local model."""
 
     prompt = tokenizer.apply_chat_template(
         messages,
@@ -43,4 +74,4 @@ def generate_reply(model, tokenizer, messages):
         verbose=False,
     )
 
-    return response.strip()
+    return clean_response(response)
