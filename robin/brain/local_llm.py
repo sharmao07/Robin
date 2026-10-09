@@ -1,17 +1,8 @@
 import re
-from pathlib import Path
 
 from mlx_lm import load, stream_generate
+from robin.brain.config import MAX_NEW_TOKENS, MODEL_DIR
 
-
-MODEL_DIR = (
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "Robin"
-    / "models"
-    / "SmolLM3-3B-4bit"
-)
 
 
 def load_brain():
@@ -61,7 +52,7 @@ def stream_reply(model, tokenizer, messages):
         model,
         tokenizer,
         prompt,
-        max_tokens=256,
+        max_tokens=MAX_NEW_TOKENS,
     ):
         pending += response.text
 
