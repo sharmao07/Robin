@@ -219,3 +219,14 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .venv/
+
+# Local AI models and caches
+models/
+*.gguf
+.huggingface/
+
+# Python environments and generated files
+.venv/
+__pycache__/
+*.py[cod]
+.env
