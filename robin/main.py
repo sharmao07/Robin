@@ -3,6 +3,7 @@ import sys
 from robin.brain.local_llm import load_brain, stream_reply
 from robin.tools.apps import open_app
 from robin.tools.router import parse_app_request
+from robin.tools.permissions import authorize
 from robin.brain.memory import (
     initialize_memory,
     load_recent_messages,
@@ -99,8 +100,11 @@ def main():
         app_name = parse_app_request(command)
 
         if app_name is not None:
-            result = open_app(app_name)
-            robin_says(result)
+            if authorize("open_app", app_name):
+                result = open_app(app_name)
+                robin_says(result)
+            else:
+                robin_says("This action is not permitted.")
             continue
 
         messages.append({"role": "user", "content": command})
