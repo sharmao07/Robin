@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from mlx_lm import generate, load
+from mlx_lm import load, stream_generate
 
 
 MODEL_DIR = (
@@ -15,22 +15,19 @@ MODEL_DIR = (
 
 
 def load_brain():
-    """Load Robin's model from local storage."""
+    """Load Robin's language model locally."""
 
     if not (MODEL_DIR / "config.json").is_file():
         raise FileNotFoundError(
-            f"Model configuration not found: {MODEL_DIR}\n"
-            "Download the model before starting Robin."
+            f"Model configuration not found: {MODEL_DIR}"
         )
 
-    model, tokenizer = load(str(MODEL_DIR))
-    return model, tokenizer
+    return load(str(MODEL_DIR))
 
 
 def clean_response(text: str) -> str:
-    """Remove visible thinking blocks from the model's response."""
+    """Remove visible thinking blocks."""
 
-    # Remove complete <think>...</think> blocks.
     text = re.sub(
         r"<think\b[^>]*>.*?</think\s*>",
         "",
@@ -38,7 +35,6 @@ def clean_response(text: str) -> str:
         flags=re.IGNORECASE | re.DOTALL,
     )
 
-    # Remove an unfinished thinking block at the end.
     text = re.sub(
         r"<think\b[^>]*>.*$",
         "",
@@ -46,19 +42,11 @@ def clean_response(text: str) -> str:
         flags=re.IGNORECASE | re.DOTALL,
     )
 
-    # Remove any leftover thinking tags.
-    text = re.sub(
-        r"</?think\s*>",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    )
-
     return text.strip()
 
 
-def generate_reply(model, tokenizer, messages):
-    """Generate a cleaned response using Robin's local model."""
+def stream_reply(model, tokenizer, messages):
+    """Stream Robin's answer while suppressing thinking blocks."""
 
     prompt = tokenizer.apply_chat_template(
         messages,
@@ -66,12 +54,74 @@ def generate_reply(model, tokenizer, messages):
         add_generation_prompt=True,
     )
 
-    response = generate(
+    pending = ""
+    inside_think = False
+
+    for response in stream_generate(
         model,
         tokenizer,
-        prompt=prompt,
-        max_tokens=400,
-        verbose=False,
-    )
+        prompt,
+        max_tokens=256,
+    ):
+        pending += response.text
 
-    return clean_response(response)
+        while pending:
+            if inside_think:
+                closing = re.search(
+                    r"</think\s*>",
+                    pending,
+                    flags=re.IGNORECASE,
+                )
+
+                if closing:
+                    pending = pending[closing.end():]
+                    inside_think = False
+                    continue
+
+                # Retain a suffix in case the closing tag
+                # is split between generated chunks.
+                pending = pending[-7:]
+                break
+
+            opening = re.search(
+                r"<think\b",
+                pending,
+                flags=re.IGNORECASE,
+            )
+
+            if opening:
+                tag_end = pending.find(">", opening.start())
+
+                if tag_end == -1:
+                    if opening.start() > 0:
+                        yield pending[:opening.start()]
+
+                    pending = pending[opening.start():]
+                    break
+
+                if opening.start() > 0:
+                    yield pending[:opening.start()]
+
+                pending = pending[tag_end + 1:]
+                inside_think = True
+                continue
+
+            # Keep a short suffix to detect a tag that may
+            # begin in the next generated chunk.
+            safe_length = len(pending) - 5
+
+            if safe_length > 0:
+                yield pending[:safe_length]
+                pending = pending[safe_length:]
+
+            break
+
+    if not inside_think and pending:
+        lower = pending.lower()
+        tag_start = lower.rfind("<")
+
+        if tag_start >= 0 and "<think".startswith(lower[tag_start:]):
+            pending = pending[:tag_start]
+
+        if pending:
+            yield pending
