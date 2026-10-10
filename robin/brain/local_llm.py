@@ -14,7 +14,7 @@ def load_brain():
     return MODEL_NAME, client
 
 
-def stream_reply(model, client, messages):
+def stream_reply(model, client, messages, stop_event=None):
     """Yield (kind, text) pairs for thinking and final-answer text."""
 
     stream = client.chat(
@@ -32,6 +32,12 @@ def stream_reply(model, client, messages):
     inside_inline_thinking = False
 
     for part in stream:
+        if stop_event is not None and stop_event.is_set():
+            close_stream = getattr(stream, "close", None)
+            if close_stream:
+                close_stream()
+            break
+
         message = part.message
 
         # Ollama's native thinking field is separate from its answer.

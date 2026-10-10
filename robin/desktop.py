@@ -1,4 +1,5 @@
 import sys
+import threading
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
@@ -48,10 +49,14 @@ class ReplyWorker(QThread):
     response_ready = Signal(str)
     response_error = Signal(str)
 
+    def request_stop(self):
+        self.stop_event.set()
+
     def __init__(self, model, client, messages):
         super().__init__()
         self.model = model
         self.client = client
+        self.stop_event = threading.Event()
         self.messages = [dict(message) for message in messages]
 
     def run(self):
@@ -59,9 +64,10 @@ class ReplyWorker(QThread):
 
         try:
             for kind, chunk in stream_reply(
-                self.model,
-                self.client,
-                self.messages,
+            self.model,
+            self.client,
+            self.messages,
+            stop_event=self.stop_event,
             ):
                 self.response_chunk.emit(kind, chunk)
 
@@ -137,10 +143,14 @@ class RobinWindow(QMainWindow):
             "font-weight: bold; } "
             "QPushButton:hover { background: #6D28D9; }"
         )
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(self.stop_generation)
 
         input_row = QHBoxLayout()
         input_row.addWidget(self.input, 1)
         input_row.addWidget(self.send_button)
+        input_row.addWidget(self.stop_button)
 
         layout.addWidget(heading)
         layout.addWidget(subtitle)
@@ -177,6 +187,12 @@ class RobinWindow(QMainWindow):
             "Robin > I'm ready. How can I help?\n\n",
             GREEN,
         )
+
+    def stop_generation(self):
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.request_stop()
+            self.stop_button.setEnabled(False)
+            self.append_text("\nRobin > Stopping response...\n", GRAY)
 
     def append_text(self, text, color):
         cursor = self.transcript.textCursor()
@@ -322,7 +338,9 @@ class RobinWindow(QMainWindow):
         self.worker.response_chunk.connect(self.on_response_chunk)
         self.worker.response_ready.connect(self.on_response_ready)
         self.worker.response_error.connect(self.on_response_error)
+        self.stop_button.setEnabled(False)
         self.worker.finished.connect(self.on_worker_finished)
+        self.stop_button.setEnabled(True)
         self.worker.start()
 
     def on_response_chunk(self, kind, chunk):
