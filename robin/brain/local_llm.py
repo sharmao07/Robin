@@ -1,6 +1,7 @@
 import re
 
 import ollama
+from robin.brain.settings import MAX_NEW_TOKENS, SHOW_THINKING
 
 
 MODEL_NAME = "qwen3:4b"
@@ -20,9 +21,9 @@ def stream_reply(model, client, messages):
         model=model,
         messages=messages,
         stream=True,
-        think=True,
+        think=SHOW_THINKING,
         options={
-            "num_predict": 384,
+            "num_predict": MAX_NEW_TOKENS,
             "temperature": 0.4,
         },
     )
