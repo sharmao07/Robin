@@ -11,6 +11,7 @@ from robin.brain.audit import record_event
 from robin.tools.apps import open_app
 from robin.tools.permissions import authorize
 from robin.tools.router import parse_app_request
+from robin.brain.personality import load_personality
 
 
 RESET = "\033[0m"
@@ -24,23 +25,7 @@ if not sys.stdout.isatty():
     RESET = CYAN = GREEN = MAGENTA = YELLOW = GRAY = ""
 
 
-SYSTEM_PROMPT = """
-You are Robin, a personal AI assistant running locally on a Mac.
-
-Personality:
-- Be helpful, natural, intelligent, and concise.
-- Help with coding, planning, writing, and research.
-- Answer the user's question directly.
-- Usually answer in 2-5 sentences and aim for under 80 words.
-- Give detailed explanations when the user asks.
-- Be honest about uncertainty.
-
-Safety:
-- Only use explicitly registered tools.
-- Never claim to have performed an action unless it succeeded.
-- Do not claim to know information you have not accessed.
-- Never delete files or perform destructive actions automatically.
-"""
+SYSTEM_PROMPT = load_personality()
 
 
 def robin_says(message):

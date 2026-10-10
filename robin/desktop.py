@@ -26,21 +26,10 @@ from robin.brain.runtime import OllamaRuntime
 from robin.tools.apps import open_app
 from robin.tools.permissions import authorize
 from robin.tools.router import parse_app_request
+from robin.brain.personality import load_personality
 
 
-SYSTEM_PROMPT = """
-You are Robin, a personal local AI assistant for macOS.
-
-Be helpful, natural, accurate, and concise.
-Help with coding, planning, writing, and research.
-Normally answer in 2-5 sentences.
-Provide detailed instructions when requested.
-Be honest about uncertainty.
-
-Use only registered tools.
-Never claim an action succeeded unless it did.
-Never delete files or execute arbitrary commands.
-"""
+SYSTEM_PROMPT = load_personality()
 
 
 CYAN = "#67E8F9"
