@@ -27,6 +27,9 @@ from robin.tools.apps import open_app
 from robin.tools.permissions import authorize
 from robin.tools.router import parse_app_request
 from robin.brain.personality import load_personality
+from robin.ui.settings import PersonalitySettingsDialog
+from robin.ui.theme import APP_STYLESHEET
+from robin.brain.personality import load_personality
 
 
 SYSTEM_PROMPT = load_personality()
@@ -139,6 +142,12 @@ class RobinWindow(QMainWindow):
 
         layout.addWidget(heading)
         layout.addWidget(subtitle)
+
+        self.settings_button = QPushButton("Personality Settings")
+        self.settings_button.clicked.connect(
+            self.open_personality_settings
+        )
+        layout.addWidget(self.settings_button)
         layout.addWidget(self.transcript, 1)
         layout.addLayout(input_row)
 
@@ -160,6 +169,19 @@ class RobinWindow(QMainWindow):
 
         self.transcript.setTextCursor(cursor)
         self.transcript.ensureCursorVisible()
+
+    def open_personality_settings(self):
+        dialog = PersonalitySettingsDialog(self)
+
+        if dialog.exec():
+            self.messages[0] = {
+                "role": "system",
+                "content": load_personality(),
+            }
+            self.append_text(
+                "Robin > Personality updated.\\n\\n",
+                GREEN,
+            )
 
     def send_message(self):
         if self.worker is not None and self.worker.isRunning():
@@ -313,6 +335,7 @@ class RobinWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyleSheet(APP_STYLESHEET)
     app.setApplicationName("Robin")
 
     runtime = OllamaRuntime()
