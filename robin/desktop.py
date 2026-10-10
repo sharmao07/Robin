@@ -148,6 +148,10 @@ class RobinWindow(QMainWindow):
             self.open_personality_settings
         )
         layout.addWidget(self.settings_button)
+
+        self.new_chat_button = QPushButton("New Chat")
+        self.new_chat_button.clicked.connect(self.new_chat)
+        layout.addWidget(self.new_chat_button)
         layout.addWidget(self.transcript, 1)
         layout.addLayout(input_row)
 
@@ -182,6 +186,26 @@ class RobinWindow(QMainWindow):
                 "Robin > Personality updated.\\n\\n",
                 GREEN,
             )
+
+    def new_chat(self):
+        if self.worker is not None and self.worker.isRunning():
+            QMessageBox.information(
+                self,
+                "Robin is responding",
+                "Wait for the current response to finish first.",
+            )
+            return
+
+        self.messages = [{
+            "role": "system",
+            "content": load_personality(),
+        }]
+
+        self.transcript.clear()
+        self.append_text(
+            "Robin > New conversation started. How can I help?\\n\\n",
+            GREEN,
+        )
 
     def send_message(self):
         if self.worker is not None and self.worker.isRunning():
