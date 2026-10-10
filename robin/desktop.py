@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from robin.brain.audit import record_event
 from robin.brain.local_llm import load_brain, stream_reply
+from robin.brain.model_manager import list_installed_models
 from robin.brain.memory import (
     initialize_memory,
     load_recent_messages,
@@ -206,39 +207,26 @@ class RobinWindow(QMainWindow):
         self.transcript.ensureCursorVisible()
 
     def refresh_models(self):
+        self.model_combo.blockSignals(True)
         try:
-            response = self.client.list()
-            names = []
-
-            for item in response.models:
-                name = (
-                    getattr(item, "model", None)
-                    or getattr(item, "name", None)
-                )
-                if name:
-                    names.append(name)
+            names = list_installed_models(self.client)
 
             if self.model not in names:
                 names.insert(0, self.model)
 
-            names = sorted(set(names))
-
-            self.model_combo.blockSignals(True)
             self.model_combo.clear()
             self.model_combo.addItems(names)
             self.model_combo.setCurrentText(self.model)
-            self.model_combo.blockSignals(False)
 
         except Exception as error:
-            self.model_combo.blockSignals(True)
             self.model_combo.clear()
             self.model_combo.addItem(self.model)
-            self.model_combo.blockSignals(False)
-
             self.append_text(
                 f"Robin > Could not list local models: {error}\\n\\n",
                 GRAY,
             )
+        finally:
+            self.model_combo.blockSignals(False)
 
     def change_model(self, name):
         if not name or name == self.model:

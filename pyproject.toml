@@ -1,0 +1,32 @@
+[project]
+name = "robin-ai"
+version = "0.1.0"
+description = "Robin, a local-first AI assistant for macOS"
+requires-python = ">=3.10"
+dependencies = [
+    "ollama>=0.4,<1",
+    "PySide6>=6.8,<7",
+]
+
+[tool.pyside6.deploy]
+title = "Robin"
+input_file = "robin/desktop.py"
+exec_directory = "dist"
+mode = "standalone"
+
+
+[tool.pyside6-project]
+files = [
+    "robin/desktop.py",
+    "robin/brain/__init__.py",
+    "robin/brain/audit.py",
+    "robin/brain/config.py",
+    "robin/brain/local_llm.py",
+    "robin/brain/model_manager.py",
+    "robin/brain/memory.py",
+    "robin/brain/runtime.py",
+    "robin/tools/__init__.py",
+    "robin/tools/apps.py",
+    "robin/tools/permissions.py",
+    "robin/tools/router.py",
+]
