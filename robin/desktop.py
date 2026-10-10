@@ -3,6 +3,7 @@ import sys
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
+    QComboBox,
     QApplication,
     QHBoxLayout,
     QLabel,
@@ -26,6 +27,7 @@ from robin.brain.runtime import OllamaRuntime
 from robin.tools.apps import open_app
 from robin.tools.permissions import authorize
 from robin.tools.router import parse_app_request
+from robin.ui.activity import ActivityDialog
 from robin.brain.personality import load_personality
 from robin.ui.settings import PersonalitySettingsDialog
 from robin.ui.theme import APP_STYLESHEET
@@ -143,6 +145,13 @@ class RobinWindow(QMainWindow):
         layout.addWidget(heading)
         layout.addWidget(subtitle)
 
+        self.model_combo = QComboBox()
+        self.refresh_models()
+        self.model_combo.currentTextChanged.connect(
+            self.change_model
+        )
+        layout.addWidget(self.model_combo)
+
         self.settings_button = QPushButton("Personality Settings")
         self.settings_button.clicked.connect(
             self.open_personality_settings
@@ -152,6 +161,12 @@ class RobinWindow(QMainWindow):
         self.new_chat_button = QPushButton("New Chat")
         self.new_chat_button.clicked.connect(self.new_chat)
         layout.addWidget(self.new_chat_button)
+
+        self.activity_button = QPushButton("Activity Log")
+        self.activity_button.clicked.connect(
+            self.open_activity_viewer
+        )
+        layout.addWidget(self.activity_button)
         layout.addWidget(self.transcript, 1)
         layout.addLayout(input_row)
 
@@ -173,6 +188,58 @@ class RobinWindow(QMainWindow):
 
         self.transcript.setTextCursor(cursor)
         self.transcript.ensureCursorVisible()
+
+    def refresh_models(self):
+        try:
+            response = self.client.list()
+            names = []
+
+            for item in response.models:
+                name = (
+                    getattr(item, "model", None)
+                    or getattr(item, "name", None)
+                )
+                if name:
+                    names.append(name)
+
+            if self.model not in names:
+                names.insert(0, self.model)
+
+            names = sorted(set(names))
+
+            self.model_combo.blockSignals(True)
+            self.model_combo.clear()
+            self.model_combo.addItems(names)
+            self.model_combo.setCurrentText(self.model)
+            self.model_combo.blockSignals(False)
+
+        except Exception as error:
+            self.model_combo.blockSignals(True)
+            self.model_combo.clear()
+            self.model_combo.addItem(self.model)
+            self.model_combo.blockSignals(False)
+
+            self.append_text(
+                f"Robin > Could not list local models: {error}\\n\\n",
+                GRAY,
+            )
+
+    def change_model(self, name):
+        if not name or name == self.model:
+            return
+
+        if self.worker is not None and self.worker.isRunning():
+            return
+
+        self.model = name
+        self.append_text(
+            f"Robin > Active model changed to {name}.\\n\\n",
+            GREEN,
+        )
+
+    def open_activity_viewer(self):
+        dialog = ActivityDialog(self)
+        dialog.exec()
 
     def open_personality_settings(self):
         dialog = PersonalitySettingsDialog(self)
