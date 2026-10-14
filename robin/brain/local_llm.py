@@ -1,15 +1,26 @@
 import re
 
-import ollama
+try:
+    import ollama
+    HAS_OLLAMA = True
+except ImportError:
+    ollama = None
+    HAS_OLLAMA = False
+
 from robin.brain.settings import MAX_NEW_TOKENS, SHOW_THINKING
 
 
 MODEL_NAME = "qwen3:4b"
-client = ollama.Client(host="http://127.0.0.1:11434")
+client = ollama.Client(host="http://127.0.0.1:11434") if HAS_OLLAMA else None
 
 
 def load_brain():
     """Verify that Robin's local model is available."""
+    if client is None:
+        raise RuntimeError(
+            "The 'ollama' Python package is not installed. "
+            "Install dependencies with: pip install -r requirements.txt"
+        )
     client.show(MODEL_NAME)
     return MODEL_NAME, client
 

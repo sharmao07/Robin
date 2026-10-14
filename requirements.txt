@@ -1,2 +1,5 @@
+# Runtime dependencies for Robin
+# In Milestone 1, Ollama is the active default provider.
+# It will transition to an optional development adapter in Milestone 3 when the embedded runtime is added.
 ollama>=0.4,<1
 PySide6>=6.8,<7
