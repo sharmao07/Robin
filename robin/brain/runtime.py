@@ -58,43 +58,23 @@ class OllamaRuntime:
         return None
 
     def ensure_running(self, timeout=40):
-        # Reuse an existing local server rather than starting a duplicate.
+        # Robin never launches Ollama automatically.
         if self.server_ready():
             return False
 
         binary = self.find_ollama_binary()
-
-        if binary is None:
+        if not binary:
             raise RuntimeError(
-                "Ollama's runtime was not found. "
-                "Robin cannot start its local AI engine."
+                "Ollama daemon is not running and runtime was not found. "
+                "Robin never automatically launches external Ollama processes. "
+                "Please use Robin's bundled embedded llama.cpp runtime."
             )
 
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-
-        env = os.environ.copy()
-        env["OLLAMA_HOST"] = "127.0.0.1:11434"
-
-        with self.log_path.open("ab") as log_file:
-            self.process = subprocess.Popen(
-                [str(binary), "serve"],
-                stdin=subprocess.DEVNULL,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                env=env,
-                start_new_session=True,
-            )
-
-        deadline = time.monotonic() + timeout
-
-        while time.monotonic() < deadline:
-            if self.server_ready():
-                return True
-
-            if self.process.poll() is not None:
-                break
-
-            time.sleep(0.5)
+        raise RuntimeError(
+            "Ollama daemon is not running at 127.0.0.1:11434. "
+            "Robin never automatically launches external Ollama processes. "
+            "Please use Robin's bundled embedded llama.cpp runtime."
+        )
 
         details = ""
         if self.log_path.exists():

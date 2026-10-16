@@ -145,8 +145,9 @@ class TestOllamaProvider(unittest.TestCase):
         self.provider = OllamaProvider(client=self.client, runtime=self.runtime)
 
     def test_provider_metadata(self):
+        from robin.brain.settings import DEFAULT_MODEL
         self.assertEqual(self.provider.name, "ollama")
-        self.assertEqual(self.provider.default_model, "qwen3:4b")
+        self.assertEqual(self.provider.default_model, DEFAULT_MODEL)
 
     def test_initialize_success(self):
         self.provider.initialize()
@@ -250,24 +251,35 @@ class TestProviderFactory(unittest.TestCase):
     def tearDown(self):
         reset_default_provider()
 
-    def test_get_provider_defaults_to_ollama(self):
+    def test_get_provider_defaults_to_embedded(self):
+        from robin.brain.providers.llama_cpp import LlamaCppProvider
         provider = get_provider()
-        self.assertIsInstance(provider, OllamaProvider)
-        self.assertEqual(provider.name, "ollama")
+        self.assertIsInstance(provider, LlamaCppProvider)
+        self.assertEqual(provider.name, "embedded")
 
-    def test_get_provider_explicit_ollama(self):
-        provider = get_provider("ollama")
-        self.assertIsInstance(provider, OllamaProvider)
+    def test_get_provider_explicit_embedded(self):
+        from robin.brain.providers.llama_cpp import LlamaCppProvider
+        provider = get_provider("embedded")
+        self.assertIsInstance(provider, LlamaCppProvider)
+        self.assertEqual(provider.name, "embedded")
 
-    def test_get_provider_honors_environment_variable(self):
-        with patch.dict(os.environ, {"ROBIN_INFERENCE_PROVIDER": "ollama"}):
-            provider = get_provider()
+    def test_get_provider_refuses_ollama_in_production(self):
+        with patch.dict(os.environ, {"ROBIN_INFERENCE_PROVIDER": "ollama", "ROBIN_ALLOW_DEV_OLLAMA": "0"}):
+            with self.assertRaises(ProviderUnavailableError) as ctx:
+                get_provider()
+            self.assertIn("Ollama is not supported in production", str(ctx.exception))
+
+    def test_get_provider_explicit_ollama_refused_in_production(self):
+        with patch.dict(os.environ, {"ROBIN_ALLOW_DEV_OLLAMA": "0"}):
+            with self.assertRaises(ProviderUnavailableError) as ctx:
+                get_provider("ollama")
+            self.assertIn("Ollama is not supported in production", str(ctx.exception))
+
+    def test_get_provider_allows_ollama_in_dev_opt_in(self):
+        with patch.dict(os.environ, {"ROBIN_ALLOW_DEV_OLLAMA": "1"}):
+            provider = get_provider("ollama")
+            self.assertIsInstance(provider, OllamaProvider)
             self.assertEqual(provider.name, "ollama")
-
-    def test_get_provider_embedded_raises_clear_error_for_m1(self):
-        with self.assertRaises(ProviderUnavailableError) as ctx:
-            get_provider("embedded")
-        self.assertIn("Milestone 3", str(ctx.exception))
 
     def test_get_provider_unknown_name_raises_error(self):
         with self.assertRaises(ProviderUnavailableError) as ctx:
@@ -281,6 +293,7 @@ class TestProviderFactory(unittest.TestCase):
         self.assertEqual(provider.name, "custom_mock")
 
     def test_default_provider_singleton_management(self):
+        from robin.brain.providers.llama_cpp import LlamaCppProvider
         p1 = get_default_provider()
         p2 = get_default_provider()
         self.assertIs(p1, p2)
@@ -292,7 +305,7 @@ class TestProviderFactory(unittest.TestCase):
         reset_default_provider()
         p3 = get_default_provider()
         self.assertIsNot(p3, custom)
-        self.assertIsInstance(p3, OllamaProvider)
+        self.assertIsInstance(p3, LlamaCppProvider)
 
 
 class TestBuildReplyWithProvider(unittest.TestCase):

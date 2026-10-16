@@ -1,10 +1,12 @@
 import sys
 import threading
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QComboBox,
+    QFrame,
+    QStackedWidget,
     QApplication,
     QHBoxLayout,
     QLabel,
@@ -25,7 +27,6 @@ from robin.brain.memory import (
     load_recent_messages,
     save_turn,
 )
-from robin.brain.runtime import OllamaRuntime
 from robin.tools.apps import open_app
 from robin.tools.permissions import authorize
 from robin.tools.router import parse_app_request
@@ -89,105 +90,297 @@ class RobinWindow(QMainWindow):
         self.client = client
         self.runtime = runtime
         self.worker = None
-
-        self.messages = [
-            {"role": "system", "content": SYSTEM_PROMPT}
-        ]
+        self.messages = [{"role": "system", "content": load_personality()}]
         self.messages.extend(load_recent_messages(limit=8))
-
         self.active_prompt = ""
         self.display_kind = None
         self.thinking_displayed = 0
         self.thinking_limit = 300
         self.thinking_notice_shown = False
+        self.nav_buttons = {}
+        self.feature_pages = {}
 
-        self.setWindowTitle("Robin — Local AI")
-        self.resize(920, 680)
+        self.setWindowTitle("Robin — Your Local AI")
+        self.resize(1240, 800)
+        self.setMinimumSize(980, 640)
 
-        root = QWidget()
-        layout = QVBoxLayout(root)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        shell = QWidget()
+        shell_layout = QHBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(0)
 
-        heading = QLabel("ROBIN  /  LOCAL AI")
-        heading.setStyleSheet(
-            "font-size: 22px; font-weight: bold; color: #E879F9;"
-        )
+        # Sidebar
+        sidebar = QFrame()
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(228)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(16, 22, 16, 18)
+        sidebar_layout.setSpacing(8)
 
-        subtitle = QLabel(
-            "Private, local chat • Ollama runtime managed by Robin"
-        )
-        subtitle.setStyleSheet("color: #9CA3AF;")
+        brand_row = QHBoxLayout()
+        brand_mark = QLabel("R")
+        brand_mark.setObjectName("BrandMark")
+        brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_mark.setFixedSize(40, 40)
+        brand_text = QVBoxLayout()
+        brand_name = QLabel("robin")
+        brand_name.setObjectName("BrandName")
+        brand_caption = QLabel("PERSONAL AI")
+        brand_caption.setObjectName("Eyebrow")
+        brand_text.addWidget(brand_name)
+        brand_text.addWidget(brand_caption)
+        brand_row.addWidget(brand_mark)
+        brand_row.addLayout(brand_text, 1)
+        sidebar_layout.addLayout(brand_row)
+        sidebar_layout.addSpacing(24)
+
+        nav_label = QLabel("WORKSPACE")
+        nav_label.setObjectName("Eyebrow")
+        sidebar_layout.addWidget(nav_label)
+
+        nav_items = [
+            ("chat", "◈", "Chat"),
+            ("knowledge", "▤", "Knowledge"),
+            ("proactive", "✧", "Proactive"),
+            ("sidekick", "⌘", "Sidekick"),
+            ("quick", "↗", "Quick Actions"),
+            ("background", "◷", "Background"),
+        ]
+        for key, glyph, label in nav_items:
+            button = QPushButton(f"{glyph}    {label}")
+            button.setObjectName("NavButton")
+            button.setCheckable(True)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(lambda checked=False, page=key: self.show_page(page))
+            self.nav_buttons[key] = button
+            sidebar_layout.addWidget(button)
+
+        sidebar_layout.addStretch(1)
+        privacy_card = QFrame()
+        privacy_card.setObjectName("PrivacyCard")
+        privacy_layout = QVBoxLayout(privacy_card)
+        privacy_layout.setContentsMargins(12, 12, 12, 12)
+        privacy_title = QLabel("●  LOCAL & PRIVATE")
+        privacy_title.setObjectName("PrivacyTitle")
+        privacy_text = QLabel("Your prompts stay on this Mac when using the local model.")
+        privacy_text.setObjectName("MutedText")
+        privacy_text.setWordWrap(True)
+        privacy_layout.addWidget(privacy_title)
+        privacy_layout.addWidget(privacy_text)
+        sidebar_layout.addWidget(privacy_card)
+
+        sidebar_footer = QHBoxLayout()
+        self.settings_button = QPushButton("⚙  Settings")
+        self.settings_button.setObjectName("SidebarUtility")
+        self.settings_button.clicked.connect(self.open_personality_settings)
+        self.activity_button = QPushButton("≡  Activity")
+        self.activity_button.setObjectName("SidebarUtility")
+        self.activity_button.clicked.connect(self.open_activity_viewer)
+        sidebar_footer.addWidget(self.settings_button)
+        sidebar_footer.addWidget(self.activity_button)
+        sidebar_layout.addLayout(sidebar_footer)
+
+        # Main workspace
+        workspace = QWidget()
+        workspace.setObjectName("Workspace")
+        workspace_layout = QVBoxLayout(workspace)
+        workspace_layout.setContentsMargins(28, 22, 28, 22)
+        workspace_layout.setSpacing(18)
+
+        topbar = QHBoxLayout()
+        page_heading = QVBoxLayout()
+        self.page_title = QLabel("Chat")
+        self.page_title.setObjectName("PageTitle")
+        self.page_subtitle = QLabel("A private assistant that works on your Mac.")
+        self.page_subtitle.setObjectName("MutedText")
+        page_heading.addWidget(self.page_title)
+        page_heading.addWidget(self.page_subtitle)
+        topbar.addLayout(page_heading, 1)
+
+        self.status_pill = QLabel("●  LOCAL MODEL")
+        self.status_pill.setObjectName("StatusPill")
+        topbar.addWidget(self.status_pill)
+        topbar.addSpacing(8)
+        self.model_combo = QComboBox()
+        self.model_combo.setMinimumWidth(170)
+        self.model_combo.setToolTip("Choose an installed local model")
+        self.model_combo.currentTextChanged.connect(self.change_model)
+        topbar.addWidget(self.model_combo)
+        workspace_layout.addLayout(topbar)
+
+        separator = QFrame()
+        separator.setObjectName("Separator")
+        separator.setFixedHeight(1)
+        workspace_layout.addWidget(separator)
+
+        self.page_stack = QStackedWidget()
+
+        # Chat page: retain Robin's existing streaming chat handlers.
+        chat_page = QWidget()
+        chat_layout = QVBoxLayout(chat_page)
+        chat_layout.setContentsMargins(0, 0, 0, 0)
+        chat_layout.setSpacing(14)
+
+        welcome = QFrame()
+        welcome.setObjectName("WelcomeCard")
+        welcome_layout = QVBoxLayout(welcome)
+        welcome_layout.setContentsMargins(20, 16, 20, 16)
+        welcome_title = QLabel("What can we work on?")
+        welcome_title.setObjectName("WelcomeTitle")
+        welcome_copy = QLabel("Ask a question, build something, or choose a workspace tool from the sidebar.")
+        welcome_copy.setObjectName("MutedText")
+        welcome_copy.setWordWrap(True)
+        welcome_layout.addWidget(welcome_title)
+        welcome_layout.addWidget(welcome_copy)
+        chat_layout.addWidget(welcome)
 
         self.transcript = QTextEdit()
+        self.transcript.setObjectName("Transcript")
         self.transcript.setReadOnly(True)
-        self.transcript.setStyleSheet(
-            "QTextEdit { background: #111827; color: #E5E7EB; "
-            "border: 1px solid #374151; border-radius: 10px; "
-            "padding: 12px; font-size: 14px; }"
-        )
+        self.transcript.setPlaceholderText("Your conversation will appear here…")
+        chat_layout.addWidget(self.transcript, 1)
 
+        composer = QFrame()
+        composer.setObjectName("Composer")
+        composer_layout = QVBoxLayout(composer)
+        composer_layout.setContentsMargins(12, 10, 12, 10)
+        composer_layout.setSpacing(8)
         self.input = QLineEdit()
-        self.input.setPlaceholderText("Ask Robin anything...")
-        self.input.setStyleSheet(
-            "QLineEdit { background: #1F2937; color: #F9FAFB; "
-            "border: 1px solid #4B5563; border-radius: 8px; "
-            "padding: 12px; font-size: 14px; }"
-        )
+        self.input.setObjectName("PromptInput")
+        self.input.setPlaceholderText("Message Robin…  (Return to send)")
         self.input.returnPressed.connect(self.send_message)
+        composer_layout.addWidget(self.input)
 
-        self.send_button = QPushButton("Send")
-        self.send_button.clicked.connect(self.send_message)
-        self.send_button.setStyleSheet(
-            "QPushButton { background: #7C3AED; color: white; "
-            "border: none; border-radius: 8px; padding: 12px 20px; "
-            "font-weight: bold; } "
-            "QPushButton:hover { background: #6D28D9; }"
-        )
+        composer_actions = QHBoxLayout()
+        composer_hint = QLabel("LOCAL INFERENCE  ·  YOU CONTROL ACTIONS")
+        composer_hint.setObjectName("Eyebrow")
+        composer_actions.addWidget(composer_hint, 1)
+        self.new_chat_button = QPushButton("＋ New chat")
+        self.new_chat_button.setObjectName("SecondaryButton")
+        self.new_chat_button.clicked.connect(self.new_chat)
+        composer_actions.addWidget(self.new_chat_button)
         self.stop_button = QPushButton("Stop")
+        self.stop_button.setObjectName("SecondaryButton")
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self.stop_generation)
+        composer_actions.addWidget(self.stop_button)
+        self.send_button = QPushButton("Send  ↗")
+        self.send_button.setObjectName("PrimaryButton")
+        self.send_button.clicked.connect(self.send_message)
+        composer_actions.addWidget(self.send_button)
+        composer_layout.addLayout(composer_actions)
+        chat_layout.addWidget(composer)
+        self.page_stack.addWidget(chat_page)
+        self.feature_pages["chat"] = 0
 
-        input_row = QHBoxLayout()
-        input_row.addWidget(self.input, 1)
-        input_row.addWidget(self.send_button)
-        input_row.addWidget(self.stop_button)
+        # Honest workspace landing pages; each is wired to a separate implementation milestone.
+        feature_content = {
+            "knowledge": (
+                "Knowledge",
+                "Build a private, searchable library from files you choose.",
+                ["Import documents and notes", "Index text locally", "Review sources and remove them"],
+                "Next: local file ingestion and search",
+            ),
+            "proactive": (
+                "Proactive",
+                "Turn context into suggestions you can review before acting.",
+                ["Suggested next steps", "Drafts awaiting approval", "Reminders you control"],
+                "Next: local task queue and reminder scheduler",
+            ),
+            "sidekick": (
+                "Sidekick",
+                "Let Robin assist with supported Mac tasks while you stay in control.",
+                ["Approved application actions", "Visible task progress", "Stop and approval controls"],
+                "Next: safe computer-use workflow",
+            ),
+            "quick": (
+                "Quick Actions",
+                "Reach Robin from a focused, lightweight action panel.",
+                ["Draft text for review", "Copy prepared replies", "Keyboard-first workflows"],
+                "Next: quick-action panel and macOS shortcut",
+            ),
+            "background": (
+                "Background Intelligence",
+                "Run small, inspectable jobs on a schedule you configure.",
+                ["Scheduled local jobs", "Job status and history", "Pause and resume controls"],
+                "Next: persistent scheduler and job worker",
+            ),
+        }
+        for key, (title, description, bullets, status) in feature_content.items():
+            page = self._make_feature_page(title, description, bullets, status)
+            self.feature_pages[key] = self.page_stack.addWidget(page)
 
-        layout.addWidget(heading)
-        layout.addWidget(subtitle)
+        workspace_layout.addWidget(self.page_stack, 1)
+        shell_layout.addWidget(sidebar)
+        shell_layout.addWidget(workspace, 1)
+        self.setCentralWidget(shell)
 
-        self.model_combo = QComboBox()
         self.refresh_models()
-        self.model_combo.currentTextChanged.connect(
-            self.change_model
-        )
-        layout.addWidget(self.model_combo)
+        self.show_page("chat")
+        self.append_text("Robin > I'm ready. How can I help?\n\n", GREEN)
 
-        self.settings_button = QPushButton("Personality Settings")
-        self.settings_button.clicked.connect(
-            self.open_personality_settings
-        )
-        layout.addWidget(self.settings_button)
+    def _make_feature_page(self, title, description, bullets, status):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 8, 0, 0)
+        layout.setSpacing(18)
 
-        self.new_chat_button = QPushButton("New Chat")
-        self.new_chat_button.clicked.connect(self.new_chat)
-        layout.addWidget(self.new_chat_button)
+        hero = QFrame()
+        hero.setObjectName("FeatureHero")
+        hero_layout = QVBoxLayout(hero)
+        hero_layout.setContentsMargins(26, 24, 26, 24)
+        eyebrow = QLabel("ROBIN WORKSPACE")
+        eyebrow.setObjectName("Eyebrow")
+        heading = QLabel(title)
+        heading.setObjectName("FeatureTitle")
+        copy = QLabel(description)
+        copy.setObjectName("MutedText")
+        copy.setWordWrap(True)
+        hero_layout.addWidget(eyebrow)
+        hero_layout.addWidget(heading)
+        hero_layout.addWidget(copy)
+        layout.addWidget(hero)
 
-        self.activity_button = QPushButton("Activity Log")
-        self.activity_button.clicked.connect(
-            self.open_activity_viewer
-        )
-        layout.addWidget(self.activity_button)
-        layout.addWidget(self.transcript, 1)
-        layout.addLayout(input_row)
+        section_title = QLabel("DESIGNED FOR YOUR WORKFLOW")
+        section_title.setObjectName("Eyebrow")
+        layout.addWidget(section_title)
+        for index, bullet in enumerate(bullets, 1):
+            row = QFrame()
+            row.setObjectName("FeatureRow")
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(16, 14, 16, 14)
+            number = QLabel(f"0{index}")
+            number.setObjectName("FeatureNumber")
+            label = QLabel(bullet)
+            label.setObjectName("FeatureRowText")
+            row_layout.addWidget(number)
+            row_layout.addWidget(label, 1)
+            layout.addWidget(row)
 
-        self.setCentralWidget(root)
-        self.setStyleSheet("QMainWindow { background: #0B1120; }")
+        notice = QLabel(status)
+        notice.setObjectName("MutedText")
+        notice.setWordWrap(True)
+        layout.addWidget(notice)
+        layout.addStretch(1)
+        return page
 
-        self.append_text(
-            "Robin > I'm ready. How can I help?\n\n",
-            GREEN,
-        )
+    def show_page(self, key):
+        if key not in self.feature_pages:
+            return
+        self.page_stack.setCurrentIndex(self.feature_pages[key])
+        titles = {
+            "chat": ("Chat", "A private assistant that works on your Mac."),
+            "knowledge": ("Knowledge", "Your files, indexed locally and under your control."),
+            "proactive": ("Proactive", "Suggestions first. Actions only with your approval."),
+            "sidekick": ("Sidekick", "Computer assistance with visible, permission-gated actions."),
+            "quick": ("Quick Actions", "Fast workflows for drafting and focused tasks."),
+            "background": ("Background Intelligence", "Scheduled work with status and controls."),
+        }
+        title, subtitle = titles[key]
+        self.page_title.setText(title)
+        self.page_subtitle.setText(subtitle)
+        for name, button in self.nav_buttons.items():
+            button.setChecked(name == key)
 
     def stop_generation(self):
         if self.worker is not None and self.worker.isRunning():
@@ -426,7 +619,11 @@ class RobinWindow(QMainWindow):
             event.ignore()
             return
 
-        self.runtime.stop_if_started()
+        if self.runtime is not None:
+            if hasattr(self.runtime, "shutdown"):
+                self.runtime.shutdown()
+            elif hasattr(self.runtime, "stop_if_started"):
+                self.runtime.stop_if_started()
         event.accept()
 
 
@@ -435,25 +632,23 @@ def main():
     app.setStyleSheet(APP_STYLESHEET)
     app.setApplicationName("Robin")
 
-    runtime = OllamaRuntime()
-
     try:
-        runtime.ensure_running()
-        model, client = load_brain()
+        from robin.brain.providers import get_provider
+        provider = get_provider()
+        provider.initialize()
+        model = provider.default_model
         initialize_memory()
+        runtime = getattr(provider, "runtime", None)
     except Exception as error:
-        runtime.stop_if_started()
-
         QMessageBox.critical(
             None,
             "Robin could not start",
             f"{error}\n\n"
-            "If the model is missing, download qwen3:4b once "
-            "before using Robin offline.",
+            "Please ensure the local GGUF model is downloaded before starting Robin offline.",
         )
         return 1
 
-    window = RobinWindow(model, client, runtime)
+    window = RobinWindow(model, provider, runtime)
     window.show()
 
     return app.exec()

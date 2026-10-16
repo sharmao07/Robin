@@ -1,4 +1,4 @@
-DEFAULT_MODEL = "qwen3:4b"
+DEFAULT_MODEL = "qwen3-4b-q4_k_m"
 
 # Maximum generated tokens for ordinary replies.
 MAX_NEW_TOKENS = 256
