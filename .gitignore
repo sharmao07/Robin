@@ -233,3 +233,4 @@ __pycache__/
 
 *.dist/
 *.app/
+.DS_Store

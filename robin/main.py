@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import sys
 import time
+
 
 from robin.brain.local_llm import load_brain, stream_reply
 from robin.brain.memory import (

@@ -1,13 +1,11 @@
 # Security Policy
 
-Robin is an experimental local-first AI assistant.
+Please report security issues privately to the repository
+maintainers rather than publishing exploit details immediately.
 
-Please report security vulnerabilities privately to the repository
-maintainers instead of publishing sensitive exploit details.
+Robin is an experimental local-first assistant. Treat model-generated
+text and actions as untrusted. Computer-control tools must enforce
+permissions independently of the model.
 
-Model output and tool requests must be treated as untrusted.
-Computer-control tools must enforce permissions independently
-of the language model.
-
-Do not include passwords, private conversations, access tokens,
-or personal logs in security reports.
+Do not submit personal logs, conversation histories, credentials,
+or private files in a security report.

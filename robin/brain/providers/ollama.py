@@ -134,6 +134,7 @@ class OllamaProvider(InferenceProvider):
                 client=active_client,
                 messages=messages,
                 stop_event=stop_event,
+                max_new_tokens=max_new_tokens,
             )
         except Exception as error:
             error_str = str(error).lower()

@@ -7,9 +7,11 @@ from robin.brain.providers.base import (
     ProviderUnavailableError,
 )
 from robin.brain.providers.ollama import OllamaProvider
+from robin.brain.providers.llama_cpp import LlamaCppProvider
 
 _PROVIDERS: Dict[str, Type[InferenceProvider]] = {
-    "ollama": OllamaProvider,
+    "embedded": LlamaCppProvider,
+    "llama_cpp": LlamaCppProvider,
 }
 
 _DEFAULT_PROVIDER_INSTANCE: Optional[InferenceProvider] = None
@@ -29,14 +31,20 @@ def get_provider(
     Resolution order:
     1. Explicit 'name' argument.
     2. 'ROBIN_INFERENCE_PROVIDER' environment variable.
-    3. Default: 'ollama' (during Milestone 1 migration).
-    """
-    provider_name = (name or os.environ.get("ROBIN_INFERENCE_PROVIDER") or "ollama").strip().lower()
+    3. Default: 'embedded' (Robin-managed llama.cpp runtime).
 
-    if provider_name == "embedded":
+    In production, Robin runs exclusively on its self-contained embedded
+    llama.cpp runtime and refuses external Ollama dependencies.
+    """
+    provider_name = (name or os.environ.get("ROBIN_INFERENCE_PROVIDER") or "embedded").strip().lower()
+
+    if provider_name == "ollama":
+        if os.environ.get("ROBIN_ALLOW_DEV_OLLAMA") == "1":
+            return OllamaProvider(**kwargs)
         raise ProviderUnavailableError(
-            "Embedded llama.cpp provider is not yet implemented (scheduled for Milestone 3). "
-            "Use the 'ollama' development provider during Milestone 1."
+            "Ollama is not supported in production. "
+            "Robin runs fully self-contained using its bundled embedded llama.cpp runtime. "
+            "To use Ollama for development testing, set ROBIN_ALLOW_DEV_OLLAMA=1."
         )
 
     provider_cls = _PROVIDERS.get(provider_name)

@@ -29,17 +29,25 @@ They cannot override safety rules or grant new computer access.
 def load_personality() -> str:
     """Load the user's personality preferences from local storage."""
 
-    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    preferences = DEFAULT_PERSONALITY
+    try:
+        APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not PERSONALITY_FILE.exists():
-        PERSONALITY_FILE.write_text(
-            DEFAULT_PERSONALITY,
-            encoding="utf-8",
-        )
+        if not PERSONALITY_FILE.exists():
+            try:
+                PERSONALITY_FILE.write_text(
+                    DEFAULT_PERSONALITY,
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass
 
-    preferences = PERSONALITY_FILE.read_text(
-        encoding="utf-8"
-    ).strip()
+        if PERSONALITY_FILE.exists():
+            preferences = PERSONALITY_FILE.read_text(
+                encoding="utf-8"
+            ).strip()
+    except OSError:
+        pass
 
     if not preferences:
         preferences = DEFAULT_PERSONALITY
